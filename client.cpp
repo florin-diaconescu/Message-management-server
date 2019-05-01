@@ -1,20 +1,22 @@
 extern "C"
 {
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include "helpers.h"	
+	#include <stdio.h>
+	#include <stdlib.h>
+	#include <unistd.h>
+	#include <string.h>
+	#include <sys/types.h>
+	#include <sys/socket.h>
+	#include <netinet/in.h>
+	#include <arpa/inet.h>
+	#include <netdb.h>
+	#include "helpers.h"	
 }
 
 #include <vector>
 #include <string>
+#include <sstream>
 #include <iostream>
+#include <iterator>
 
 using namespace std;
 
@@ -22,6 +24,20 @@ void usage(char *file)
 {
 	fprintf(stderr, "Usage: %s <client_id> <server_address> <server_port>\n", file);
 	exit(0);
+}
+
+vector<string> tokenize_input(string input)
+{
+	stringstream ss(input);
+	string buf;
+	vector<string> tokens;
+
+	while (ss >> buf)
+	{
+		tokens.push_back(buf);
+	}
+
+	return tokens;
 }
 
 int main(int argc, char *argv[])
@@ -46,7 +62,7 @@ int main(int argc, char *argv[])
 
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_port = htons(atoi(argv[3]));
-	//cout << ntohs(serv_addr.sin_port)  << "\n";
+
 	ret = inet_aton(argv[2], &serv_addr.sin_addr);
 	DIE(ret == 0, "inet_aton");
 
@@ -87,6 +103,10 @@ int main(int argc, char *argv[])
 			// se trimite mesaj la server
 			n = send(sockfd, buffer, sizeof(buffer), 0);
 			DIE(n < 0, "send");
+
+			string str(buffer);
+			vector<string> tokens = tokenize_input(str);
+			cout << "You have " << tokens[0] << "d " << tokens[1] << "!\n";
 		}
 
 	}

@@ -1,20 +1,23 @@
 extern "C"
 {
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include "helpers.h"
+	#include <stdio.h>
+	#include <string.h>
+	#include <stdlib.h>
+	#include <unistd.h>
+	#include <sys/types.h>
+	#include <sys/socket.h>
+	#include <netinet/in.h>
+	#include <netinet/tcp.h>
+	#include <arpa/inet.h>
+	#include "helpers.h"
 }
 
 #include <vector>
 #include <utility>
 #include <string>
+#include <sstream>
 #include <iostream>
+#include <iterator>
 
 using namespace std;
 
@@ -34,6 +37,20 @@ string find_id(int id, vector<pair <string, int> > cli_ids)
 		}
 	}
 	return NULL;
+}
+
+vector<string> tokenize_input(string input)
+{
+	stringstream ss(input);
+	string buf;
+	vector<string> tokens;
+
+	while (ss >> buf)
+	{
+		tokens.push_back(buf);
+	}
+
+	return tokens;
 }
 
 int main(int argc, char *argv[])
@@ -80,6 +97,10 @@ int main(int argc, char *argv[])
 	// se adauga noul file descriptor (socketul pe care se asculta conexiuni) in multimea read_fds
 	FD_SET(sockfd, &read_fds);
 	fdmax = sockfd;
+
+	// dezactivez algoritmul Nagle
+	int b = 1;
+	setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, (char *)(&b), sizeof(b));
 
 	while (1) {
 		tmp_fds = read_fds; 
@@ -131,12 +152,14 @@ int main(int argc, char *argv[])
 						if (strstr(buffer, "unsubscribe"))
 						{
 							// TODO: ce fac cand da unsubscribe
-							printf("TEAVA");
+							string str(buffer);
+							vector<string> tokens = tokenize_input(str);
 						}
 						else if (strstr(buffer, "subscribe"))
 						{
 							// TODO: ce fac cand da subscribe
-							printf("TEAVA");
+							string str(buffer);
+							vector<string> tokens = tokenize_input(str);
 						}
 						// am primit un id
 						else
@@ -164,9 +187,9 @@ int main(int argc, char *argv[])
 						}
 					}
 				}
+			}
 		}
 	}
-}
 
 	close(sockfd);
 
