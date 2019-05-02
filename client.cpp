@@ -106,7 +106,16 @@ int main(int argc, char *argv[])
 
 			string str(buffer);
 			vector<string> tokens = tokenize_input(str);
-			cout << "You have " << tokens[0] << "d " << tokens[1] << "!\n";
+
+			
+			/*if (tokens.size() == 3)
+			{
+				if ((tokens[0] == "subscribe" || tokens[0] == "unsubscribe") &&
+					(tokens[2] == "0" || tokens[2] == "1"))
+				{
+					cout << "You have " << tokens[0] << "d " << tokens[1] << "!\n";
+				}
+			}*/
 		}
 
 	}

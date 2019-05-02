@@ -14,6 +14,7 @@ extern "C"
 
 #include <vector>
 #include <utility>
+#include <map>
 #include <string>
 #include <sstream>
 #include <iostream>
@@ -25,18 +26,6 @@ void usage(char *file)
 {
 	fprintf(stderr, "Usage: %s <server_port>\n", file);
 	exit(0);
-}
-
-string find_id(int id, vector<pair <string, int> > cli_ids)
-{
-	for (auto i : cli_ids)
-	{
-		if (i.second == id)
-		{
-			return i.first;
-		}
-	}
-	return NULL;
 }
 
 vector<string> tokenize_input(string input)
@@ -53,6 +42,27 @@ vector<string> tokenize_input(string input)
 	return tokens;
 }
 
+// functie care verifica validitatea input-ului
+bool check_tokens(int sockfd, vector<string> tokens)
+{
+	if (tokens.size() != 3)
+	{
+		send(sockfd, INPUT_ERR, sizeof(INPUT_ERR), 0);
+		return false;
+	}
+	else if ((tokens[2] != "0") && (tokens[2] != "1"))
+	{
+		send(sockfd, SF_ERR, sizeof(SF_ERR), 0);
+		return false;
+	}
+	else if ((tokens[0] != "subscribe") && (tokens[0] != "unsubscribe"))
+	{
+		send(sockfd, INPUT_ERR, sizeof(INPUT_ERR), 0);
+		return false;
+	}
+	return true;
+}
+
 int main(int argc, char *argv[])
 {
 	int sockfd, newsockfd, portno;
@@ -61,8 +71,9 @@ int main(int argc, char *argv[])
 	int n, i, ret;
 	socklen_t clilen;
 	
-	pair<string, int> id;
-	vector<pair <string, int> > cli_ids;
+	// folosit pentru asocierea sockfd-ului cu id-ul clientului conectat
+	map<int, string> cli_ids;
+	// TODO: folosit pentru obtinerea topic-urilor la care este abonat clientul
 
 	fd_set read_fds;	// multimea de citire folosita in select()
 	fd_set tmp_fds;		// multime folosita temporar
@@ -118,7 +129,6 @@ int main(int argc, char *argv[])
 					// pe care serverul o accepta
 					clilen = sizeof(cli_addr);
 					newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
-					//send(newsockfd, clients, sizeof(clients), 0);
 					DIE(newsockfd < 0, "accept");
 
 					// se adauga noul socket intors de accept() la multimea descriptorilor de citire
@@ -140,50 +150,55 @@ int main(int argc, char *argv[])
 					if (n == 0)
 					{
 						// conexiunea s-a inchis
-						printf("Client %s disconnected.\n", find_id(i, cli_ids).c_str());
+						string id = cli_ids.find(i)->second;
+						cout << "Client " << id << " disconnected.\n";
 						close(i);
 						
 						// se scoate din multimea de citire socketul inchis 
 						FD_CLR(i, &read_fds);
+						cli_ids[i] = "\0\0";
 					}
 					else
 					{
 						// daca e un socket nou, trebuie sa adaug un element nou in lista id-urilor
-						if (strstr(buffer, "unsubscribe"))
+						if ((cli_ids.find(i) == cli_ids.end()) || (cli_ids[i] == "\0\0"))
+						{
+							string id(buffer);
+							cli_ids[i] = id;
+
+							printf("New client %s connected from %s:%d.\n",
+									buffer, inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
+						}
+						else if (strstr(buffer, "unsubscribe"))
 						{
 							// TODO: ce fac cand da unsubscribe
 							string str(buffer);
 							vector<string> tokens = tokenize_input(str);
+
+							if (check_tokens(i, tokens) == true)
+							{
+								// TODO: cazul in care input-ul este ok
+								string send_msg = "You have unsubscribed from " + tokens[1] + "!";
+								send(i, send_msg.c_str(), send_msg.size(), 0);
+							}
 						}
 						else if (strstr(buffer, "subscribe"))
 						{
 							// TODO: ce fac cand da subscribe
 							string str(buffer);
 							vector<string> tokens = tokenize_input(str);
+
+							if (check_tokens(i, tokens) == true)
+							{
+								// TODO: cazul in care input-ul este ok
+								string send_msg = "You have subscribed to " + tokens[1] + "!";
+								send(i, send_msg.c_str(), send_msg.size(), 0);
+							}
 						}
-						// am primit un id
+						// input-ul este incorect
 						else
-						{
-							// verific daca a mai fost conectat in trecut
-							int found = 0;
-							for (auto j : cli_ids)
-							{
-								if (strcmp(buffer, j.first.c_str()) == 0)
-								{
-									j.second = i;
-									found = 1;
-									break;
-								}
-							}
-						
-							if (found == 0)
-							{
-								id.first = buffer;
-								id.second = i;
-								cli_ids.push_back(id);
-							}
-							printf("New client %s connected from %s:%d.\n",
-									buffer, inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
+						{							
+							send(i, INPUT_ERR, sizeof(INPUT_ERR), 0);
 						}
 					}
 				}
