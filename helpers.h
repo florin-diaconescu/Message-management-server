@@ -23,7 +23,7 @@
 
 #define INPUT_ERR "Wrong input! Usage: (un)subscribe <topic> <SF>"
 #define SF_ERR "Please use a SF equal to 0 or 1!"
-#define BUFLEN		256	// dimensiunea maxima a calupului de date
-#define MAX_CLIENTS	5	// numarul maxim de clienti in asteptare
+#define BUFLEN		1552	// dimensiunea maxima a calupului de date
+#define MAX_CLIENTS	500		// numarul maxim de clienti in asteptare
 
 #endif

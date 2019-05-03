@@ -65,7 +65,7 @@ bool check_tokens(int sockfd, vector<string> tokens)
 
 int main(int argc, char *argv[])
 {
-	int sockfd, newsockfd, portno;
+	int sockfd, udpfd, newsockfd, portno;
 	char buffer[BUFLEN];
 	struct sockaddr_in serv_addr, cli_addr;
 	int n, i, ret;
@@ -75,9 +75,12 @@ int main(int argc, char *argv[])
 	map<int, string> cli_ids;
 	// TODO: folosit pentru obtinerea topic-urilor la care este abonat clientul
 
-	fd_set read_fds;	// multimea de citire folosita in select()
-	fd_set tmp_fds;		// multime folosita temporar
-	int fdmax;			// valoare maxima fd din multimea read_fds
+	fd_set read_fds;	 // multimea de citire folosita in select()
+	//fd_set read_fds_udp; // multime de citire folosita pentru UDP
+	fd_set tmp_fds;		 // multime folosita temporar
+	//fd_set tmp_fds_udp;  // multime folosita temporar pentru UDP
+	int fdmax;			 // valoare maxima fd din multimea read_fds
+	//int fdmax_udp;		 // valoare maxima fd din multimea read_fds_udp
 
 	if (argc < 2)
 	{
@@ -88,6 +91,7 @@ int main(int argc, char *argv[])
 	FD_ZERO(&read_fds);
 	FD_ZERO(&tmp_fds);
 
+	// socket-ul pentru conexiunea TCP
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	DIE(sockfd < 0, "socket");
 
@@ -100,14 +104,20 @@ int main(int argc, char *argv[])
 	serv_addr.sin_addr.s_addr = INADDR_ANY;
 
 	ret = bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(struct sockaddr));
-	DIE(ret < 0, "bind");
+	DIE(ret < 0, "bind_TCP");
 
 	ret = listen(sockfd, MAX_CLIENTS);
 	DIE(ret < 0, "listen");
 
+	// socket-ul pentru conexiunea UDP
+	udpfd = socket(AF_INET, SOCK_DGRAM, 0);
+	ret = bind(udpfd, (struct sockaddr*)&serv_addr, sizeof(struct sockaddr));
+	DIE(ret < 0, "bind_UDP");
+
 	// se adauga noul file descriptor (socketul pe care se asculta conexiuni) in multimea read_fds
 	FD_SET(sockfd, &read_fds);
-	fdmax = sockfd;
+	FD_SET(udpfd, &read_fds);
+	fdmax = max(sockfd, udpfd);
 
 	// dezactivez algoritmul Nagle
 	int b = 1;
@@ -115,9 +125,25 @@ int main(int argc, char *argv[])
 
 	while (1) {
 		tmp_fds = read_fds; 
-		
+		//tmp_fds_udp = read_fds_udp;
+
 		ret = select(fdmax + 1, &tmp_fds, NULL, NULL, NULL);
 		DIE(ret < 0, "select");
+
+		// am primit date de la socket-ul UDP
+		if (FD_ISSET(udpfd, &tmp_fds))
+		{
+			clilen = sizeof(cli_addr);
+			ret = recvfrom(udpfd, buffer, BUFLEN, 0, (struct sockaddr*)&cli_addr, &clilen);
+			DIE(ret < 0, "recvfrom_UDP");
+
+			/*printf("New UDP client connected from %s:%d.\n",
+					 inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));*/
+
+			cout << buffer << " " << sizeof(buffer) << "\n";
+
+			continue;
+		}
 
 		for (i = 0; i <= fdmax; i++)
 		{
@@ -204,9 +230,26 @@ int main(int argc, char *argv[])
 				}
 			}
 		}
+
+		/*ret = select(fdmax_udp + 1, &tmp_fds_udp, NULL, NULL, NULL);
+		DIE(ret < 0, "select");
+
+		//daca este o conexiune UDP
+		for (i = 0; i <= fdmax_udp; i++)
+		{
+			if (FD_ISSET(i, &tmp_fds_udp))
+			{
+				// a aparut un nou client de UDP
+				if (i == udpfd)
+				{
+					clilen = sizeof(cli_addr);
+				}
+			}
+		}*/
 	}
 
 	close(sockfd);
+	close(udpfd);
 
 	return 0;
 }
