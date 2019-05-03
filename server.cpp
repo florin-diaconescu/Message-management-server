@@ -42,6 +42,11 @@ vector<string> tokenize_input(string input)
 	return tokens;
 }
 
+vector<string> parse_payload()
+{
+	return vector<string>();
+}
+
 // functie care verifica validitatea input-ului
 bool check_tokens(int sockfd, vector<string> tokens)
 {
@@ -67,6 +72,7 @@ int main(int argc, char *argv[])
 {
 	int sockfd, udpfd, newsockfd, portno;
 	char buffer[BUFLEN];
+	char output[BUFLEN];
 	struct sockaddr_in serv_addr, cli_addr;
 	int n, i, ret;
 	socklen_t clilen;
@@ -76,11 +82,8 @@ int main(int argc, char *argv[])
 	// TODO: folosit pentru obtinerea topic-urilor la care este abonat clientul
 
 	fd_set read_fds;	 // multimea de citire folosita in select()
-	//fd_set read_fds_udp; // multime de citire folosita pentru UDP
 	fd_set tmp_fds;		 // multime folosita temporar
-	//fd_set tmp_fds_udp;  // multime folosita temporar pentru UDP
 	int fdmax;			 // valoare maxima fd din multimea read_fds
-	//int fdmax_udp;		 // valoare maxima fd din multimea read_fds_udp
 
 	if (argc < 2)
 	{
@@ -125,7 +128,6 @@ int main(int argc, char *argv[])
 
 	while (1) {
 		tmp_fds = read_fds; 
-		//tmp_fds_udp = read_fds_udp;
 
 		ret = select(fdmax + 1, &tmp_fds, NULL, NULL, NULL);
 		DIE(ret < 0, "select");
@@ -139,8 +141,65 @@ int main(int argc, char *argv[])
 
 			/*printf("New UDP client connected from %s:%d.\n",
 					 inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));*/
+			/*string string_buffer(buffer);
+			stringstream strValue;
+			strValue << string_buffer;
 
-			cout << buffer << " " << sizeof(buffer) << "\n";
+			char topic_name[50];
+			char data_type = buffer[50];
+			strValue >> topic_name;
+
+			string ip_address(inet_ntoa(cli_addr.sin_addr));
+			string port_no(ntohs(cli_addr.sin_port))
+			string output = ip_address + ":" + port_no + 
+				 " - " + topic_name + " " + data_type + "\n";*/
+
+			char data_type[1];
+
+			sprintf(data_type, "%u", buffer[50]);
+
+			string string_buffer(buffer);
+			stringstream strValue;
+			strValue << string_buffer;
+
+			char topic_name[50];
+			strValue >> topic_name;
+			
+			if (strcmp(data_type, "0") == 0)
+			{
+				uint32_t value;
+				string_buffer.erase(0, 51);
+				stringstream intValue;
+				intValue << string_buffer;
+				intValue >> value;
+
+				cout << "\n" << string_buffer << "\n";
+				memset(output, 0, BUFLEN);
+				sprintf(output, "%s:%d - %s - INT - %u\n", inet_ntoa(cli_addr.sin_addr),
+					ntohs(cli_addr.sin_port), topic_name, buffer[51]);
+				cout << output;
+			}
+			else if ((strcmp(data_type, "1") == 0))
+			{
+				memset(output, 0, BUFLEN);
+				sprintf(output, "%s:%d - %s - SHORT_REAL - %d\n", inet_ntoa(cli_addr.sin_addr),
+					ntohs(cli_addr.sin_port), topic_name, 0);
+				cout << output;
+			}
+			else if ((strcmp(data_type, "2") == 0))
+			{
+				memset(output, 0, BUFLEN);
+				sprintf(output, "%s:%d - %s - FLOAT - %d\n", inet_ntoa(cli_addr.sin_addr),
+					ntohs(cli_addr.sin_port), topic_name, 0);
+				cout << output;
+			}
+			else if ((strcmp(data_type, "3") == 0))
+			{
+				memset(output, 0, BUFLEN);
+				sprintf(output, "%s:%d - %s - STRING - %d\n", inet_ntoa(cli_addr.sin_addr),
+					ntohs(cli_addr.sin_port), topic_name, 0);
+				cout << output;
+			}
 
 			continue;
 		}
@@ -230,22 +289,6 @@ int main(int argc, char *argv[])
 				}
 			}
 		}
-
-		/*ret = select(fdmax_udp + 1, &tmp_fds_udp, NULL, NULL, NULL);
-		DIE(ret < 0, "select");
-
-		//daca este o conexiune UDP
-		for (i = 0; i <= fdmax_udp; i++)
-		{
-			if (FD_ISSET(i, &tmp_fds_udp))
-			{
-				// a aparut un nou client de UDP
-				if (i == udpfd)
-				{
-					clilen = sizeof(cli_addr);
-				}
-			}
-		}*/
 	}
 
 	close(sockfd);
