@@ -19,6 +19,7 @@ extern "C"
 #include <sstream>
 #include <iostream>
 #include <iterator>
+#include <cmath>
 
 using namespace std;
 
@@ -183,9 +184,29 @@ int main(int argc, char *argv[])
 			// daca este un FLOAT
 			else if ((strcmp(data_type, "2") == 0))
 			{
+				char sign[1];
+				sprintf(sign, "%hhu", buffer[51]);
+
 				memset(output, 0, BUFLEN);
-				sprintf(output, "%s:%d - %s - FLOAT - %d\n", inet_ntoa(cli_addr.sin_addr),
-					ntohs(cli_addr.sin_port), topic_name, 0);
+				sprintf(output, "%s:%d - %s - FLOAT - ", inet_ntoa(cli_addr.sin_addr),
+					ntohs(cli_addr.sin_port), topic_name);
+
+				// daca numarul este negativ, adaug un minus
+				if (sign[0] == '1')
+				{
+					sprintf(output + strlen(output), "-");
+				}
+
+				// modulul numarului obtinut prin alipire
+				uint32_t value = 0;
+				memcpy(&value, &buffer[52], sizeof(value));
+
+				// modulul puterii negative a lui 10
+				uint8_t neg_pow = 0;
+				memcpy(&neg_pow, &buffer[52 + sizeof(value)], sizeof(neg_pow));
+
+				sprintf(output + strlen(output), "%g\n", ((float)htonl(value) / pow(10, neg_pow)));
+
 				cout << output;
 			}
 
