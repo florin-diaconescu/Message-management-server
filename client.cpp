@@ -7,6 +7,7 @@ extern "C"
 	#include <sys/types.h>
 	#include <sys/socket.h>
 	#include <netinet/in.h>
+  #include <netinet/tcp.h>
 	#include <arpa/inet.h>
 	#include <netdb.h>
 	#include "helpers.h"	
@@ -24,20 +25,6 @@ void usage(char *file)
 {
 	fprintf(stderr, "Usage: %s <client_id> <server_address> <server_port>\n", file);
 	exit(0);
-}
-
-vector<string> tokenize_input(string input)
-{
-	stringstream ss(input);
-	string buf;
-	vector<string> tokens;
-
-	while (ss >> buf)
-	{
-		tokens.push_back(buf);
-	}
-
-	return tokens;
 }
 
 int main(int argc, char *argv[])
@@ -68,6 +55,10 @@ int main(int argc, char *argv[])
 
 	ret = connect(sockfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr));
 	DIE(ret < 0, "connect");
+
+  // dezactivez algoritmul Nagle
+  int b = 1;
+  setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, (char *)(&b), sizeof(b));
 
 	FD_SET(sockfd, &read_fds);
 	FD_SET(STDIN_FILENO, &read_fds);
@@ -103,19 +94,6 @@ int main(int argc, char *argv[])
 			// se trimite mesaj la server
 			n = send(sockfd, buffer, sizeof(buffer), 0);
 			DIE(n < 0, "send");
-
-			string str(buffer);
-			vector<string> tokens = tokenize_input(str);
-
-			
-			/*if (tokens.size() == 3)
-			{
-				if ((tokens[0] == "subscribe" || tokens[0] == "unsubscribe") &&
-					(tokens[2] == "0" || tokens[2] == "1"))
-				{
-					cout << "You have " << tokens[0] << "d " << tokens[1] << "!\n";
-				}
-			}*/
 		}
 
 	}

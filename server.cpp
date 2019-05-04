@@ -66,17 +66,25 @@ bool check_tokens(int sockfd, vector<string> tokens)
 
 int main(int argc, char *argv[])
 {
-	int sockfd, udpfd, newsockfd, portno;
+	int sockfd, udpfd, newsockfd, send_sock_fd, portno;
 	char buffer[BUFLEN];
 	char output[BUFLEN];
 	char string_value[BUFLEN];
 	struct sockaddr_in serv_addr, cli_addr;
-	int n, i, ret;
+	int n, i, j, ret;
 	socklen_t clilen;
+  uint8_t found;
 	
 	// folosit pentru asocierea sockfd-ului cu id-ul clientului conectat
 	map<int, string> cli_ids;
-	// TODO: folosit pentru obtinerea topic-urilor la care este abonat clientul
+  // folosit pentru asocierea unui client cu socket-ul pe care (eventual) este
+  // conectat si un iterator folosit pentru parcurgerea cli_socks
+  map<string, int> cli_socks;
+  map<string, int>::iterator it;
+	// folosit pentru obtinerea topic-urilor la care este abonat clientul
+  vector<pair<string, vector<string> > > topics;
+  // folosit pentru topicuri noi
+  pair<string, vector<string> > new_topic;
 
 	fd_set read_fds;	 // multimea de citire folosita in select()
 	fd_set tmp_fds;		 // multime folosita temporar
@@ -87,7 +95,8 @@ int main(int argc, char *argv[])
 		usage(argv[0]);
 	}
 
-	// se goleste multimea de descriptori de citire (read_fds) si multimea temporara (tmp_fds)
+	// se goleste multimea de descriptori de citire (read_fds) si multimea
+  // temporara (tmp_fds)
 	FD_ZERO(&read_fds);
 	FD_ZERO(&tmp_fds);
 
@@ -114,7 +123,8 @@ int main(int argc, char *argv[])
 	ret = bind(udpfd, (struct sockaddr*)&serv_addr, sizeof(struct sockaddr));
 	DIE(ret < 0, "bind_UDP");
 
-	// se adauga noul file descriptor (socketul pe care se asculta conexiuni) in multimea read_fds
+	// se adauga noul file descriptor (socketul pe care se asculta conexiuni)
+	// in multimea read_fds
 	FD_SET(sockfd, &read_fds);
 	FD_SET(udpfd, &read_fds);
 	fdmax = max(sockfd, udpfd);
@@ -133,7 +143,8 @@ int main(int argc, char *argv[])
 		if (FD_ISSET(udpfd, &tmp_fds))
 		{
 			clilen = sizeof(cli_addr);
-			ret = recvfrom(udpfd, buffer, BUFLEN, 0, (struct sockaddr*)&cli_addr, &clilen);
+			ret = recvfrom(udpfd, buffer, BUFLEN, 0, (struct sockaddr*)&cli_addr, 
+				&clilen);
 			DIE(ret < 0, "recvfrom_UDP");
 
 			char data_type[1];
@@ -158,7 +169,7 @@ int main(int argc, char *argv[])
     			memcpy(&value, &buffer[52], sizeof(value));
 
     			memset(output, 0, BUFLEN);
-				sprintf(output, "%s:%d - %s - INT - ", inet_ntoa(cli_addr.sin_addr),
+				  sprintf(output, "%s:%d - %s - INT - ", inet_ntoa(cli_addr.sin_addr),
 					ntohs(cli_addr.sin_port), topic_name);
 
 				// daca numarul e negativ, adaug un minus
@@ -167,8 +178,7 @@ int main(int argc, char *argv[])
 					sprintf(output + strlen(output), "-");
 				}
 
-				sprintf(output + strlen(output), "%u\n", htonl(value));
-				cout << output;
+				sprintf(output + strlen(output), "%u", htonl(value));
 			}
 			// daca este un SHORT_REAL
 			else if ((strcmp(data_type, "1") == 0))
@@ -177,9 +187,9 @@ int main(int argc, char *argv[])
 				memcpy(&value, &buffer[51], sizeof(value));
 
 				memset(output, 0, BUFLEN);
-				sprintf(output, "%s:%d - %s - SHORT_REAL - %g\n", inet_ntoa(cli_addr.sin_addr),
-					ntohs(cli_addr.sin_port), topic_name, ((float)htons(value) / 100));
-				cout << output;
+				sprintf(output, "%s:%d - %s - SHORT_REAL - %g", 
+					inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port),
+					topic_name, ((float)htons(value) / 100));
 			}
 			// daca este un FLOAT
 			else if ((strcmp(data_type, "2") == 0))
@@ -205,9 +215,9 @@ int main(int argc, char *argv[])
 				uint8_t neg_pow = 0;
 				memcpy(&neg_pow, &buffer[52 + sizeof(value)], sizeof(neg_pow));
 
-				sprintf(output + strlen(output), "%g\n", ((float)htonl(value) / pow(10, neg_pow)));
-
-				cout << output;
+        // folosesc numar variabil de zecimale, dat de neg_pow
+				sprintf(output + strlen(output), "%.*f", neg_pow,
+					((float)htonl(value) / pow(10, neg_pow)));
 			}
 
 			//daca este un STRING
@@ -217,10 +227,30 @@ int main(int argc, char *argv[])
 				memcpy(string_value, &buffer[51], STRINGLEN);
 
 				memset(output, 0, BUFLEN);
-				sprintf(output, "%s:%d - %s - STRING - %s\n", inet_ntoa(cli_addr.sin_addr),
-					ntohs(cli_addr.sin_port), topic_name, string_value);
-				cout << output;
+				sprintf(output, "%s:%d - %s - STRING - %s", 
+					inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port),
+					topic_name, string_value);
 			}
+
+			// in momentul asta, am output-ul, pe care trebuie sa il trimit la clientii
+			// abonati(sau sa il pastrez, pentru cei cu SF = 1)
+      for (auto j : topics)
+      {
+        // daca exista clienti abonati la topic-ul la care s-a postat un mesaj
+        if (strcmp(topic_name, j.first.c_str()) == 0)
+        {
+          for (i = 0; i < j.second.size(); i++)
+          {
+            it = cli_socks.find(j.second[i]);
+            if (it != cli_socks.end())
+            {
+              send_sock_fd = it->second;
+              ret = send(send_sock_fd, output, sizeof(output), 0);
+              DIE(ret < 0, "send_udp_msg");
+            }
+          }   
+        }
+      }
 
 			continue;
 		}
@@ -237,7 +267,8 @@ int main(int argc, char *argv[])
 					newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
 					DIE(newsockfd < 0, "accept");
 
-					// se adauga noul socket intors de accept() la multimea descriptorilor de citire
+					// se adauga noul socket intors de accept() la multimea descriptorilor
+          // de citire
 					FD_SET(newsockfd, &read_fds);
 					if (newsockfd > fdmax)
 					{ 
@@ -271,6 +302,7 @@ int main(int argc, char *argv[])
 						{
 							string id(buffer);
 							cli_ids[i] = id;
+              cli_socks[id] = i;
 
 							printf("New client %s connected from %s:%d.\n",
 									buffer, inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
@@ -300,6 +332,30 @@ int main(int argc, char *argv[])
 								string send_msg = "You have subscribed to " + tokens[1] + "!";
 								send(i, send_msg.c_str(), send_msg.size(), 0);
 							}
+
+              found = 0;
+              for (j = 0; j < topics.size(); j++)
+              {
+                // daca exista deja topicul
+                if (topics[j].first == tokens[1])
+                {
+                  topics[j].second.push_back(cli_ids[i]);
+                  found = 1;
+                  break;
+                }
+              }
+
+              // daca topicul nu exista, adaug un topic nou
+              if (found == 0)
+              {
+                new_topic.first = tokens[1];
+                new_topic.second = vector<string>(1, cli_ids[i]);
+                topics.push_back(new_topic);
+              }
+             /* if (tokens[2] == "0")
+              {
+
+              }*/
 						}
 						// input-ul este incorect
 						else
