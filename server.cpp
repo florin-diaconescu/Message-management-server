@@ -42,11 +42,6 @@ vector<string> tokenize_input(string input)
 	return tokens;
 }
 
-vector<string> parse_payload()
-{
-	return vector<string>();
-}
-
 // functie care verifica validitatea input-ului
 bool check_tokens(int sockfd, vector<string> tokens)
 {
@@ -73,6 +68,7 @@ int main(int argc, char *argv[])
 	int sockfd, udpfd, newsockfd, portno;
 	char buffer[BUFLEN];
 	char output[BUFLEN];
+	char string_value[BUFLEN];
 	struct sockaddr_in serv_addr, cli_addr;
 	int n, i, ret;
 	socklen_t clilen;
@@ -139,21 +135,6 @@ int main(int argc, char *argv[])
 			ret = recvfrom(udpfd, buffer, BUFLEN, 0, (struct sockaddr*)&cli_addr, &clilen);
 			DIE(ret < 0, "recvfrom_UDP");
 
-			/*printf("New UDP client connected from %s:%d.\n",
-					 inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));*/
-			/*string string_buffer(buffer);
-			stringstream strValue;
-			strValue << string_buffer;
-
-			char topic_name[50];
-			char data_type = buffer[50];
-			strValue >> topic_name;
-
-			string ip_address(inet_ntoa(cli_addr.sin_addr));
-			string port_no(ntohs(cli_addr.sin_port))
-			string output = ip_address + ":" + port_no + 
-				 " - " + topic_name + " " + data_type + "\n";*/
-
 			char data_type[1];
 
 			sprintf(data_type, "%u", buffer[50]);
@@ -165,27 +146,41 @@ int main(int argc, char *argv[])
 			char topic_name[50];
 			strValue >> topic_name;
 			
+			// daca este un INT
 			if (strcmp(data_type, "0") == 0)
 			{
-				uint32_t value;
-				string_buffer.erase(0, 51);
-				stringstream intValue;
-				intValue << string_buffer;
-				intValue >> value;
+				uint32_t value = 0;
 
-				cout << "\n" << string_buffer << "\n";
-				memset(output, 0, BUFLEN);
-				sprintf(output, "%s:%d - %s - INT - %u\n", inet_ntoa(cli_addr.sin_addr),
-					ntohs(cli_addr.sin_port), topic_name, buffer[51]);
+				char sign[1];
+				sprintf(sign, "%hhu", buffer[51]);
+
+    			memcpy(&value, &buffer[52], sizeof(value));
+
+    			memset(output, 0, BUFLEN);
+				sprintf(output, "%s:%d - %s - INT - ", inet_ntoa(cli_addr.sin_addr),
+					ntohs(cli_addr.sin_port), topic_name);
+
+				// daca numarul e negativ, adaug un minus
+				if (sign[0] == '1')
+				{
+					sprintf(output + strlen(output), "-");
+				}
+
+				sprintf(output + strlen(output), "%u\n", htonl(value));
 				cout << output;
 			}
+			// daca este un SHORT_REAL
 			else if ((strcmp(data_type, "1") == 0))
 			{
+				uint16_t value = 0;
+				memcpy(&value, &buffer[51], sizeof(value));
+
 				memset(output, 0, BUFLEN);
-				sprintf(output, "%s:%d - %s - SHORT_REAL - %d\n", inet_ntoa(cli_addr.sin_addr),
-					ntohs(cli_addr.sin_port), topic_name, 0);
+				sprintf(output, "%s:%d - %s - SHORT_REAL - %g\n", inet_ntoa(cli_addr.sin_addr),
+					ntohs(cli_addr.sin_port), topic_name, ((float)htons(value) / 100));
 				cout << output;
 			}
+			// daca este un FLOAT
 			else if ((strcmp(data_type, "2") == 0))
 			{
 				memset(output, 0, BUFLEN);
@@ -193,11 +188,16 @@ int main(int argc, char *argv[])
 					ntohs(cli_addr.sin_port), topic_name, 0);
 				cout << output;
 			}
+
+			//daca este un STRING
 			else if ((strcmp(data_type, "3") == 0))
 			{
+				memset(string_value, 0, BUFLEN);
+				memcpy(string_value, &buffer[51], STRINGLEN);
+
 				memset(output, 0, BUFLEN);
-				sprintf(output, "%s:%d - %s - STRING - %d\n", inet_ntoa(cli_addr.sin_addr),
-					ntohs(cli_addr.sin_port), topic_name, 0);
+				sprintf(output, "%s:%d - %s - STRING - %s\n", inet_ntoa(cli_addr.sin_addr),
+					ntohs(cli_addr.sin_port), topic_name, string_value);
 				cout << output;
 			}
 
