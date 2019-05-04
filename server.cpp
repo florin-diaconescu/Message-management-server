@@ -64,6 +64,36 @@ bool check_tokens(int sockfd, vector<string> tokens)
 	return true;
 }
 
+// functie auxiliara, folosita pentru verificarea subscribe-ului cu SF = 1
+// pentru clientul cu user_id pentru topic-ul topic_name
+void check_SF(vector<pair<string, vector<char *> > > &offline_msgs,
+  vector<pair<string, vector<string> > > sf_topics, char *topic_name,
+  string user_id, char *output)
+{
+  for (int k = 0; k < offline_msgs.size(); k++)
+  {
+    if (user_id == offline_msgs[k].first)
+    {
+      for (int l = 0; l < sf_topics.size(); k++)
+      {
+        if (strcmp(sf_topics[l].first.c_str(), topic_name) == 0)
+        {
+          for (int m = 0; m < sf_topics[l].second.size(); m++)
+          {
+            if (sf_topics[l].second[m] == user_id)
+            {
+              offline_msgs[k].second.push_back(output);
+              return;
+            }
+          }
+        }
+      }
+    }
+  }
+  return;
+}
+
+
 int main(int argc, char *argv[])
 {
 	int sockfd, udpfd, newsockfd, send_sock_fd, portno;
@@ -77,14 +107,21 @@ int main(int argc, char *argv[])
 	
 	// folosit pentru asocierea sockfd-ului cu id-ul clientului conectat
 	map<int, string> cli_ids;
+
   // folosit pentru asocierea unui client cu socket-ul pe care (eventual) este
   // conectat si un iterator folosit pentru parcurgerea cli_socks
   map<string, int> cli_socks;
   map<string, int>::iterator it;
+
 	// folosit pentru obtinerea topic-urilor la care este abonat clientul
   vector<pair<string, vector<string> > > topics;
+  // folosit pentru obtinerea topic-urilor cu SF = 1, la care este abonat clientul
+  vector<pair<string, vector<string> > > sf_topics;
   // folosit pentru topicuri noi
   pair<string, vector<string> > new_topic;
+
+  //folosit pentru stocarea mesajelor offline ale unui client
+  vector<pair<string, vector<char *> > > offline_msgs;
 
 	fd_set read_fds;	 // multimea de citire folosita in select()
 	fd_set tmp_fds;		 // multime folosita temporar
@@ -131,7 +168,8 @@ int main(int argc, char *argv[])
 
 	// dezactivez algoritmul Nagle
 	int b = 1;
-	setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, (char *)(&b), sizeof(b));
+	ret = setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, (char *)(&b), sizeof(b));
+  DIE(ret < 0, "setsockopt");
 
 	while (1) {
 		tmp_fds = read_fds; 
@@ -166,10 +204,10 @@ int main(int argc, char *argv[])
 				char sign[1];
 				sprintf(sign, "%hhu", buffer[51]);
 
-    			memcpy(&value, &buffer[52], sizeof(value));
+    		memcpy(&value, &buffer[52], sizeof(value));
 
-    			memset(output, 0, BUFLEN);
-				  sprintf(output, "%s:%d - %s - INT - ", inet_ntoa(cli_addr.sin_addr),
+    		memset(output, 0, BUFLEN);
+				sprintf(output, "%s:%d - %s - INT - ", inet_ntoa(cli_addr.sin_addr),
 					ntohs(cli_addr.sin_port), topic_name);
 
 				// daca numarul e negativ, adaug un minus
@@ -242,16 +280,22 @@ int main(int argc, char *argv[])
           for (i = 0; i < j.second.size(); i++)
           {
             it = cli_socks.find(j.second[i]);
-            if (it != cli_socks.end())
+            if (it != cli_socks.end() && it->second > 0)
             {
               send_sock_fd = it->second;
               ret = send(send_sock_fd, output, sizeof(output), 0);
               DIE(ret < 0, "send_udp_msg");
             }
+
+            // altfel, verific daca clientul are SF setat pe 1, caz in care adaug
+            // mesajul in vector, pentru a i-l trimite la conectare
+            else
+            {
+              check_SF(offline_msgs, sf_topics, topic_name, j.second[i], output);
+            }
           }   
         }
       }
-
 			continue;
 		}
 
@@ -294,6 +338,7 @@ int main(int argc, char *argv[])
 						// se scoate din multimea de citire socketul inchis 
 						FD_CLR(i, &read_fds);
 						cli_ids[i] = "\0\0";
+            cli_socks[id] = -1;
 					}
 					else
 					{
@@ -306,6 +351,22 @@ int main(int argc, char *argv[])
 
 							printf("New client %s connected from %s:%d.\n",
 									buffer, inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
+
+              for (j = 0; j < offline_msgs.size(); j++)
+              {
+                if (id == offline_msgs[j].first)
+                {
+                  // verific daca are mesaje offline ce trebuiau sa fie trimise
+                  int msg_count = offline_msgs[j].second.size();
+                  for (int k = 0; k < msg_count; k++)
+                  {
+                    ret = send(i, offline_msgs[j].second[0],
+                      sizeof(offline_msgs[j].second[0]), 0);
+                    DIE(ret < 0, "send");
+                    offline_msgs[j].second.erase(offline_msgs[j].second.begin());
+                  }
+                }
+              }
 						}
 						else if (strstr(buffer, "unsubscribe"))
 						{
@@ -317,7 +378,8 @@ int main(int argc, char *argv[])
 							{
 								// TODO: cazul in care input-ul este ok
 								string send_msg = "You have unsubscribed from " + tokens[1] + "!";
-								send(i, send_msg.c_str(), send_msg.size(), 0);
+								ret = send(i, send_msg.c_str(), send_msg.size(), 0);
+                DIE(ret < 0, "send");
 							}
 						}
 						else if (strstr(buffer, "subscribe"))
@@ -330,7 +392,8 @@ int main(int argc, char *argv[])
 							{
 								// TODO: cazul in care input-ul este ok
 								string send_msg = "You have subscribed to " + tokens[1] + "!";
-								send(i, send_msg.c_str(), send_msg.size(), 0);
+								ret = send(i, send_msg.c_str(), send_msg.size(), 0);
+                DIE(ret < 0, "send");
 							}
 
               found = 0;
@@ -352,10 +415,34 @@ int main(int argc, char *argv[])
                 new_topic.second = vector<string>(1, cli_ids[i]);
                 topics.push_back(new_topic);
               }
-             /* if (tokens[2] == "0")
-              {
 
-              }*/
+              // daca SF este setat pe 1, il adaug intr-o lista suplimentara
+              if (tokens[2] == "1")
+              {
+                pair<string, vector<char *> > new_user;
+                new_user.first = cli_ids[i];
+                offline_msgs.push_back(new_user);
+
+                found = 0;
+                for (j = 0; j < sf_topics.size(); j++)
+                {
+                  // daca exista deja topicul
+                  if (sf_topics[j].first == tokens[1])
+                  {
+                    sf_topics[j].second.push_back(cli_ids[i]);
+                    found = 1;
+                    break;
+                  }
+                }
+
+                // daca topicul nu exista, adaug un topic nou
+                if (found == 0)
+                {
+                  new_topic.first = tokens[1];
+                  new_topic.second = vector<string>(1, cli_ids[i]);
+                  sf_topics.push_back(new_topic);
+                }
+              }
 						}
 						// input-ul este incorect
 						else

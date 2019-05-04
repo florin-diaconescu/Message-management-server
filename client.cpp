@@ -58,7 +58,8 @@ int main(int argc, char *argv[])
 
   // dezactivez algoritmul Nagle
   int b = 1;
-  setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, (char *)(&b), sizeof(b));
+  ret = setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, (char *)(&b), sizeof(b));
+  DIE(ret < 0, "setsockopt");
 
 	FD_SET(sockfd, &read_fds);
 	FD_SET(STDIN_FILENO, &read_fds);
@@ -76,7 +77,9 @@ int main(int argc, char *argv[])
 		// primesc mesaj de la server
 		if (FD_ISSET(sockfd, &tmp_fds))
 		{
-			recv(sockfd, buffer, sizeof(buffer), 0);
+			ret = recv(sockfd, buffer, sizeof(buffer), 0);
+      DIE(ret < 0, "recv");
+
 			printf("%s\n", buffer);
 		}
 
@@ -98,7 +101,6 @@ int main(int argc, char *argv[])
 
 	}
   		
-
 	close(sockfd);
 
 	return 0;
