@@ -23,12 +23,15 @@ extern "C"
 
 using namespace std;
 
+// functie ce trateaza cazul in care se porneste serverul intr-un mod incorect
 void usage(char *file)
 {
 	fprintf(stderr, "Usage: %s <server_port>\n", file);
 	exit(0);
 }
 
+// functie auxiliara, folosita pentru impartirea unui string intr-un vector
+// de string(tokens), in functie de spatiile ce le separa
 vector<string> tokenize_input(string input)
 {
 	stringstream ss(input);
@@ -48,15 +51,33 @@ bool check_tokens(int sockfd, vector<string> tokens)
 {
 	if (tokens.size() != 3)
 	{
-		send(sockfd, INPUT_ERR, sizeof(INPUT_ERR), 0);
-		return false;
+    // daca nu am 2 sau 3 tokeni, comanda este invalida
+    if (tokens.size() != 2)
+    {
+      send(sockfd, INPUT_ERR, sizeof(INPUT_ERR), 0);
+      return false;
+    }
+		else
+    {
+      // daca comanda are 2 tokeni, dar primul nu este unsubscribe, comanda
+      // este invalida
+      if (tokens[0] != "unsubscribe")
+      {
+        send(sockfd, INPUT_ERR, sizeof(INPUT_ERR), 0);
+        return false;
+      }
+      return true;
+    }
 	}
+  // verific validitatea SF(poate fi doar 0 sau 1)
 	else if ((tokens[2] != "0") && (tokens[2] != "1"))
 	{
 		send(sockfd, SF_ERR, sizeof(SF_ERR), 0);
 		return false;
 	}
-	else if ((tokens[0] != "subscribe") && (tokens[0] != "unsubscribe"))
+  // daca am 3 tokeni, iar SF e valid, verific daca primul este subscribe,
+  // in caz contrar comanda fiind invalida
+	else if (tokens[0] != "subscribe")
 	{
 		send(sockfd, INPUT_ERR, sizeof(INPUT_ERR), 0);
 		return false;
@@ -74,7 +95,7 @@ void check_SF(vector<pair<string, vector<char *> > > &offline_msgs,
   {
     if (user_id == offline_msgs[k].first)
     {
-      for (int l = 0; l < sf_topics.size(); k++)
+      for (int l = 0; l < sf_topics.size(); l++)
       {
         if (strcmp(sf_topics[l].first.c_str(), topic_name) == 0)
         {
@@ -97,6 +118,28 @@ void check_SF(vector<pair<string, vector<char *> > > &offline_msgs,
   return;
 }
 
+// functie folosita pentru comanda "unsubscribe", caz in care vreau sa elimin
+// clientul cu id-ul client_id dintr-o lista de topic-uri
+void unsubscribe_from_list(vector<pair<string, vector<string> > > &topics,
+  string client_id, string topic_name)
+{
+  for (int j = 0; j < topics.size(); j++)
+  {
+    // daca am gasit topic-ul curaspunzator
+    if (topics[j].first == topic_name)
+    {
+      for (int k = 0; k < topics[j].second.size(); k++)
+      {
+        // daca am gasit clientul in lista subscriberilor pentru acel topic,
+        // il elimin din vector
+        if (client_id == topics[j].second[k])
+        {
+          topics[j].second.erase(topics[j].second.begin() + k);
+        }
+      }
+    }
+  }
+}
 
 int main(int argc, char *argv[])
 {
@@ -131,6 +174,7 @@ int main(int argc, char *argv[])
 	fd_set tmp_fds;		 // multime folosita temporar
 	int fdmax;			 // valoare maxima fd din multimea read_fds
 
+  // daca serverul este apelat cu un numar necorespunzator de argumente
 	if (argc < 2)
 	{
 		usage(argv[0]);
@@ -165,9 +209,11 @@ int main(int argc, char *argv[])
 	DIE(ret < 0, "bind_UDP");
 
 	// se adauga noul file descriptor (socketul pe care se asculta conexiuni)
-	// in multimea read_fds
+	// in multimea read_fds, precum si STDIN(pentru a putea accepta comanda
+  // exit) si socket-ul folosit pentru conexiunea UDP
 	FD_SET(sockfd, &read_fds);
 	FD_SET(udpfd, &read_fds);
+  FD_SET(STDIN_FILENO, &read_fds);
 	fdmax = max(sockfd, udpfd);
 
 	// dezactivez algoritmul Nagle
@@ -180,6 +226,28 @@ int main(int argc, char *argv[])
 
 		ret = select(fdmax + 1, &tmp_fds, NULL, NULL, NULL);
 		DIE(ret < 0, "select");
+
+    // am primit mesaj de la tastatura
+    if (FD_ISSET(STDIN_FILENO, &tmp_fds))
+    {
+      memset(buffer, 0, BUFLEN);
+      fgets(buffer, BUFLEN - 1, stdin);
+
+      if (strncmp(buffer, "exit", 4) == 0) 
+      {
+        for (i = 0; i < fdmax; i++)
+        {
+          if (FD_ISSET(i, &read_fds))
+          {
+            send(i, "exit", sizeof("exit"), 0);
+            shutdown(i, 1);
+            close(i);
+            FD_CLR(i, &read_fds);
+          }
+        }
+        break;
+      }
+    }
 
 		// am primit date de la socket-ul UDP
 		if (FD_ISSET(udpfd, &tmp_fds))
@@ -373,18 +441,23 @@ int main(int argc, char *argv[])
                 }
               }
 						}
+            // cazul in care clientul alege sa dea unsubscribe unui topic
 						else if (strstr(buffer, "unsubscribe"))
 						{
-							// TODO: ce fac cand da unsubscribe
 							string str(buffer);
 							vector<string> tokens = tokenize_input(str);
 
 							if (check_tokens(i, tokens) == true)
 							{
-								// TODO: cazul in care input-ul este ok
+								// cazul in care input-ul este ok
 								string send_msg = "You have unsubscribed from " + tokens[1] + "!";
 								ret = send(i, send_msg.c_str(), send_msg.size(), 0);
                 DIE(ret < 0, "send");
+
+                // caut topic-ul in lista si, daca e cazul, elimin clientul cu
+                // id-ul corespunzator
+                unsubscribe_from_list(topics, cli_ids[i], tokens[1]);
+                unsubscribe_from_list(sf_topics, cli_ids[i], tokens[1]);
 							}
 						}
 						else if (strstr(buffer, "subscribe"))
@@ -426,7 +499,21 @@ int main(int argc, char *argv[])
               {
                 pair<string, vector<char *> > new_user;
                 new_user.first = cli_ids[i];
-                offline_msgs.push_back(new_user);
+
+                found = 0;
+                for (int k = 0; k < offline_msgs.size(); k++)
+                {
+                  if (offline_msgs[k].first == new_user.first)
+                  {
+                    found = 1;
+                    break;
+                  }
+                }
+
+                if (found == 0)
+                {
+                  offline_msgs.push_back(new_user);
+                }
 
                 found = 0;
                 for (j = 0; j < sf_topics.size(); j++)
