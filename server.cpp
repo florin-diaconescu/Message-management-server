@@ -1,3 +1,9 @@
+/*
+-------------------------------------------------
+-- Diaconescu Florin, 322CB, florin.diaconescu --
+-------------------------------------------------
+*/
+
 extern "C"
 {
 	#include <stdio.h>
@@ -38,6 +44,8 @@ vector<string> tokenize_input(string input)
 	string buf;
 	vector<string> tokens;
 
+  // citesc din string stream-ul format din input cate un token, pe care il
+  // adaug in vector
 	while (ss >> buf)
 	{
 		tokens.push_back(buf);
@@ -91,21 +99,30 @@ void check_SF(vector<pair<string, vector<char *> > > &offline_msgs,
   vector<pair<string, vector<string> > > sf_topics, char *topic_name,
   string user_id, char *output)
 {
+  // parcurg lista utilizatorilor
   for (int k = 0; k < offline_msgs.size(); k++)
   {
     if (user_id == offline_msgs[k].first)
     {
+      // pentru user-ul dorit, caut in toate topic-urile ce au macar un abonat
+      // cu SF = 1
       for (int l = 0; l < sf_topics.size(); l++)
       {
         if (strcmp(sf_topics[l].first.c_str(), topic_name) == 0)
         {
+          // in topicul cu numele dorit, verific daca utilizatorul cu user_id
+          // este abonat cu SF = 1
           for (int m = 0; m < sf_topics[l].second.size(); m++)
           {
             if (sf_topics[l].second[m] == user_id)
             {
+              // aloc dinamic o copie a output-ului dorit, ce va fi dezalocata
+              // in momentul conectarii user-ului (si deci, a afisarii mesajului)
               char *output_cpy = (char *)malloc(BUFLEN);
               memset(output_cpy, 0, BUFLEN);
               memcpy(output_cpy, output, strlen(output) + 1);
+              // adaug mesajul in lista de mesaje ce va trebui livrata user-ului
+              // la conectare
               offline_msgs[k].second.push_back(output_cpy);
 
               return;
@@ -150,7 +167,7 @@ int main(int argc, char *argv[])
 	struct sockaddr_in serv_addr, cli_addr;
 	int n, i, j, ret;
 	socklen_t clilen;
-  uint8_t found;
+  uint8_t found;     // folosit cu rol de flag in diverse sectiuni
 	
 	// folosit pentru asocierea sockfd-ului cu id-ul clientului conectat
 	map<int, string> cli_ids;
@@ -172,7 +189,7 @@ int main(int argc, char *argv[])
 
 	fd_set read_fds;	 // multimea de citire folosita in select()
 	fd_set tmp_fds;		 // multime folosita temporar
-	int fdmax;			 // valoare maxima fd din multimea read_fds
+	int fdmax;			   // valoare maxima fd din multimea read_fds
 
   // daca serverul este apelat cu un numar necorespunzator de argumente
 	if (argc < 2)
@@ -189,6 +206,17 @@ int main(int argc, char *argv[])
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	DIE(sockfd < 0, "socket");
 
+  // activez optiunea de reutilizare a adresei, pentru a putea reporni serverul
+  // pe acelasi port
+  int enable = 1;
+  ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
+  DIE(ret < 0, "setsockopt SO_REUSEADDR");
+
+  // dezactivez algoritmul Nagle
+  int b = 1;
+  ret = setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, (char *)(&b), sizeof(b));
+  DIE(ret < 0, "setsockopt TCP_NODELAY");
+
 	portno = atoi(argv[1]);
 	DIE(portno == 0, "atoi");
 
@@ -197,9 +225,11 @@ int main(int argc, char *argv[])
 	serv_addr.sin_port = htons(portno);
 	serv_addr.sin_addr.s_addr = INADDR_ANY;
 
+  // bind pentru socket-ul TCP
 	ret = bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(struct sockaddr));
 	DIE(ret < 0, "bind_TCP");
 
+  // pun socket-ul in modul listen, asteptand un client ce doreste conexiunea
 	ret = listen(sockfd, MAX_CLIENTS);
 	DIE(ret < 0, "listen");
 
@@ -216,11 +246,6 @@ int main(int argc, char *argv[])
   FD_SET(STDIN_FILENO, &read_fds);
 	fdmax = max(sockfd, udpfd);
 
-	// dezactivez algoritmul Nagle
-	int b = 1;
-	ret = setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, (char *)(&b), sizeof(b));
-  DIE(ret < 0, "setsockopt");
-
 	while (1) {
 		tmp_fds = read_fds; 
 
@@ -233,8 +258,10 @@ int main(int argc, char *argv[])
       memset(buffer, 0, BUFLEN);
       fgets(buffer, BUFLEN - 1, stdin);
 
+      // singura comanda valida este "exit"
       if (strncmp(buffer, "exit", 4) == 0) 
       {
+        // pentru fiecare descriptor, inchid conexiunea
         for (i = 0; i < fdmax; i++)
         {
           if (FD_ISSET(i, &read_fds))
@@ -257,27 +284,32 @@ int main(int argc, char *argv[])
 				&clilen);
 			DIE(ret < 0, "recvfrom_UDP");
 
+      // folosit pentru indicatorul tipului de date, ce va fi al 51-lea byte
+      // din buffer
 			char data_type[1];
-
 			sprintf(data_type, "%u", buffer[50]);
 
 			string string_buffer(buffer);
-			stringstream strValue;
-			strValue << string_buffer;
+			stringstream str_value;
+			str_value << string_buffer;
 
+      // citesc numele topic-ului dintr-un string stream, format din transformarea
+      // char * intr-un string specific C++
 			char topic_name[50];
-			strValue >> topic_name;
+			str_value >> topic_name;
 			
 			// daca este un INT
 			if (strcmp(data_type, "0") == 0)
 			{
-				uint32_t value = 0;
-
+        // citesc bitul de semn
 				char sign[1];
 				sprintf(sign, "%hhu", buffer[51]);
 
+        // copiez din buffer, incepand cu pozitia 52, valoarea
+        uint32_t value = 0;
     		memcpy(&value, &buffer[52], sizeof(value));
 
+        // incep sa formatez output-ul
     		memset(output, 0, BUFLEN);
 				sprintf(output, "%s:%d - %s - INT - ", inet_ntoa(cli_addr.sin_addr),
 					ntohs(cli_addr.sin_port), topic_name);
@@ -288,14 +320,19 @@ int main(int argc, char *argv[])
 					sprintf(output + strlen(output), "-");
 				}
 
+        // in final, adaug valoarea 
 				sprintf(output + strlen(output), "%u", htonl(value));
 			}
+
 			// daca este un SHORT_REAL
 			else if ((strcmp(data_type, "1") == 0))
 			{
+        // analog, salvez valoarea, incepand cu pozitia 51
 				uint16_t value = 0;
 				memcpy(&value, &buffer[51], sizeof(value));
 
+        // formatez output-ul, impartind valoarea la 100, pentru a-i calcula
+        // valoarea dorita
 				memset(output, 0, BUFLEN);
 				sprintf(output, "%s:%d - %s - SHORT_REAL - %g", 
 					inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port),
@@ -304,9 +341,11 @@ int main(int argc, char *argv[])
 			// daca este un FLOAT
 			else if ((strcmp(data_type, "2") == 0))
 			{
+        // citesc bitul de semn
 				char sign[1];
 				sprintf(sign, "%hhu", buffer[51]);
 
+        // formatez prima parte a output-ului
 				memset(output, 0, BUFLEN);
 				sprintf(output, "%s:%d - %s - FLOAT - ", inet_ntoa(cli_addr.sin_addr),
 					ntohs(cli_addr.sin_port), topic_name);
@@ -333,6 +372,7 @@ int main(int argc, char *argv[])
 			//daca este un STRING
 			else if ((strcmp(data_type, "3") == 0))
 			{
+        // copiez in string_value maxim 1500 de caractere
 				memset(string_value, 0, BUFLEN);
 				memcpy(string_value, &buffer[51], STRINGLEN);
 
@@ -351,6 +391,7 @@ int main(int argc, char *argv[])
         {
           for (i = 0; i < j.second.size(); i++)
           {
+            // verific daca clientul este conectat, pentru a-i trimite mesajul
             it = cli_socks.find(j.second[i]);
             if (it != cli_socks.end() && it->second > 0)
             {
@@ -371,6 +412,7 @@ int main(int argc, char *argv[])
 			continue;
 		}
 
+    // logica pentru TCP
 		for (i = 0; i <= fdmax; i++)
 		{
 			if (FD_ISSET(i, &tmp_fds))
@@ -414,9 +456,11 @@ int main(int argc, char *argv[])
 					}
 					else
 					{
-						// daca e un socket nou, trebuie sa adaug un element nou in lista id-urilor
+						// daca e un socket nou, trebuie sa adaug un element nou in lista
+            // id-urilor
 						if ((cli_ids.find(i) == cli_ids.end()) || (cli_ids[i] == "\0\0"))
 						{
+              // memorez id-ul client-ului in cele doua mapari
 							string id(buffer);
 							cli_ids[i] = id;
               cli_socks[id] = i;
@@ -424,17 +468,20 @@ int main(int argc, char *argv[])
 							printf("New client %s connected from %s:%d.\n",
 									buffer, inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
 
+              // caut in lista utilizatorilor offline user-ul cu id-ul celui ce
+              // abia s-a conectat, pentru a verifica daca are mesaje offline
+              // ce trebuiau sa fie trimise
               for (j = 0; j < offline_msgs.size(); j++)
               {
                 if (id == offline_msgs[j].first)
                 {
-                  // verific daca are mesaje offline ce trebuiau sa fie trimise
                   int msg_count = offline_msgs[j].second.size();
                   for (int k = 0; k < msg_count; k++)
                   {
                     ret = send(i, offline_msgs[j].second[0], BUFLEN, 0);
                     DIE(ret < 0, "send");
-                    // eliberez memoria ocupata de buffer
+                    // eliberez memoria ocupata de buffer si elimin din vectorul
+                    // de mesaje pe acela care tocmai a fost trimis
                     free(offline_msgs[j].second[0]);
                     offline_msgs[j].second.erase(offline_msgs[j].second.begin());
                   }
@@ -444,36 +491,42 @@ int main(int argc, char *argv[])
             // cazul in care clientul alege sa dea unsubscribe unui topic
 						else if (strstr(buffer, "unsubscribe"))
 						{
+              // impart inputul in tokeni
 							string str(buffer);
 							vector<string> tokens = tokenize_input(str);
 
 							if (check_tokens(i, tokens) == true)
 							{
-								// cazul in care input-ul este ok
+								// in cazul in care input-ul este ok, trimit confirmarea
+                // dezabonarii clientului
 								string send_msg = "You have unsubscribed from " + tokens[1] + "!";
 								ret = send(i, send_msg.c_str(), send_msg.size(), 0);
                 DIE(ret < 0, "send");
 
                 // caut topic-ul in lista si, daca e cazul, elimin clientul cu
-                // id-ul corespunzator
+                // id-ul corespunzator (atat in cea normala, cat si cea cu SF)
                 unsubscribe_from_list(topics, cli_ids[i], tokens[1]);
                 unsubscribe_from_list(sf_topics, cli_ids[i], tokens[1]);
 							}
 						}
+            // cazul in care clientul alege sa dea subscribe unui topic
 						else if (strstr(buffer, "subscribe"))
 						{
-							// TODO: ce fac cand da subscribe
+							// impart inputul in tokeni
 							string str(buffer);
 							vector<string> tokens = tokenize_input(str);
 
 							if (check_tokens(i, tokens) == true)
 							{
-								// TODO: cazul in care input-ul este ok
+								// in cazul in care input-ul este ok, trimit confirmarea abonarii
+                // clientului
 								string send_msg = "You have subscribed to " + tokens[1] + "!";
 								ret = send(i, send_msg.c_str(), send_msg.size(), 0);
                 DIE(ret < 0, "send");
 							}
 
+              // actualizez lista de topic-uri si de topic-uri cu SF = 1 la care
+              // este abonat clientul, daca este cazul
               found = 0;
               for (j = 0; j < topics.size(); j++)
               {
@@ -500,6 +553,7 @@ int main(int argc, char *argv[])
                 pair<string, vector<char *> > new_user;
                 new_user.first = cli_ids[i];
 
+                // adaug un utilizator nou, doar daca acesta nu exista deja
                 found = 0;
                 for (int k = 0; k < offline_msgs.size(); k++)
                 {
@@ -536,7 +590,7 @@ int main(int argc, char *argv[])
                 }
               }
 						}
-						// input-ul este incorect
+						// daca input-ul este incorect, trimit mesajul de eroare clientului
 						else
 						{							
 							send(i, INPUT_ERR, sizeof(INPUT_ERR), 0);
@@ -547,6 +601,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
+  // inchid socketii ramasi deschisi
 	close(sockfd);
 	close(udpfd);
 

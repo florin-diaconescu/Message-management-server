@@ -11,23 +11,15 @@ PORT =
 # Adresa IP a serverului
 IP_SERVER = 
 
-all: server client 
+all: server subscriber 
 
 # Compileaza server.c
 server: server.cpp
 
 # Compileaza client.c
-client: client.cpp
+subscriber: subscriber.cpp
 
-.PHONY: clean run_server run_client
-
-# Ruleaza serverul
-run_server:
-	./server ${IP_SERVER} ${PORT}
-
-# Ruleaza clientul 	
-run_client:
-	./client ${IP_SERVER} ${PORT}
+.PHONY: clean
 
 clean:
 	rm -f server client
