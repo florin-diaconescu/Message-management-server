@@ -82,7 +82,11 @@ void check_SF(vector<pair<string, vector<char *> > > &offline_msgs,
           {
             if (sf_topics[l].second[m] == user_id)
             {
-              offline_msgs[k].second.push_back(output);
+              char *output_cpy = (char *)malloc(BUFLEN);
+              memset(output_cpy, 0, BUFLEN);
+              memcpy(output_cpy, output, strlen(output) + 1);
+              offline_msgs[k].second.push_back(output_cpy);
+
               return;
             }
           }
@@ -360,9 +364,10 @@ int main(int argc, char *argv[])
                   int msg_count = offline_msgs[j].second.size();
                   for (int k = 0; k < msg_count; k++)
                   {
-                    ret = send(i, offline_msgs[j].second[0],
-                      sizeof(offline_msgs[j].second[0]), 0);
+                    ret = send(i, offline_msgs[j].second[0], BUFLEN, 0);
                     DIE(ret < 0, "send");
+                    // eliberez memoria ocupata de buffer
+                    free(offline_msgs[j].second[0]);
                     offline_msgs[j].second.erase(offline_msgs[j].second.begin());
                   }
                 }
