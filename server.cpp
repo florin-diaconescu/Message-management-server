@@ -163,7 +163,7 @@ int main(int argc, char *argv[])
 	int sockfd, udpfd, newsockfd, send_sock_fd, portno;
 	char buffer[BUFLEN];
 	char output[BUFLEN];
-	char string_value[BUFLEN];
+	
 	struct sockaddr_in serv_addr, cli_addr;
 	int n, i, j, ret;
 	socklen_t clilen;
@@ -373,8 +373,10 @@ int main(int argc, char *argv[])
 			else if ((strcmp(data_type, "3") == 0))
 			{
         // copiez in string_value maxim 1500 de caractere
-				memset(string_value, 0, BUFLEN);
-				memcpy(string_value, &buffer[51], STRINGLEN);
+        char string_value[STRINGLEN];
+				memset(string_value, 0, STRINGLEN);
+				strncpy(string_value, &buffer[51], STRINGLEN);
+        memset(buffer, 0, BUFLEN);
 
 				memset(output, 0, BUFLEN);
 				sprintf(output, "%s:%d - %s - STRING - %s", 
@@ -462,6 +464,29 @@ int main(int argc, char *argv[])
 						{
               // memorez id-ul client-ului in cele doua mapari
 							string id(buffer);
+
+              found = 0;
+              // caut daca mai exista deja un utilizator cu acel id conectat
+              for (j = 0; j < cli_ids.size(); j++)
+              {
+                // daca exista, nu permit conexiunea noului utilizator, ii
+                // trimit un mesaj de eroare
+                if (buffer == cli_ids[j])
+                {
+                  found = 1;
+                  send (i, USER_ERR, sizeof(USER_ERR), 0);
+                  shutdown(i, 1);
+                  close(i);
+                  FD_CLR(i, &read_fds);
+                  break;
+                }
+              }
+
+              if (found == 1)
+              {
+                continue;
+              }
+
 							cli_ids[i] = id;
               cli_socks[id] = i;
 

@@ -48,6 +48,13 @@ int main(int argc, char *argv[])
 		usage(argv[0]);
 	}
 
+  // ma asigur ca nu va fi introdus un ID cu dimensiune mai mare de 10
+  if (strlen(argv[1]) > 10)
+  {
+    printf(LONG_ID_ERR);
+    return 0;
+  }
+
   // golesc multimile de file descriptori
 	FD_ZERO(&read_fds);
 	FD_ZERO(&tmp_fds);
@@ -76,7 +83,7 @@ int main(int argc, char *argv[])
 	FD_SET(STDIN_FILENO, &read_fds);
 
   // trimit client id-ul serverului, pentru a fi identificat
-	ret = send(sockfd, argv[1], sizeof(argv[1]), 0);
+	ret = send(sockfd, argv[1], MAX_ID_SIZE, 0);
 	DIE(ret < 0, "send");
 
 	while (1) 

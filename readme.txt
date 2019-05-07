@@ -86,7 +86,17 @@ deja trimise din memorie.
 Ar merita mentionat ca, pentru implementarea mea, dupa ce se realizeaza
 conexiunea intre client si server, primul mesaj TCP trimis de client va fi
 numele de utilizator, in urma acestuia fiind afisat si la ecran mesajul de
-conectare al acestuia.
+conectare al acestuia. Astfel, pot sa ma asigur si ca nu mai exista un client
+cu acelasi id conectat in acel moment. In cazul in care se conecteaza un al
+doilea utilizator cu acelasi id, acesta va fi respins, fiindu-i inchisa
+conexiunea si primind un mesaj de eroare corespunzator.
+Daca subscriber va fi apelat cu un ID mai mare de 10 caractere, i se va afisa,
+de asemenea, un mesaj de eroare, pentru a putea alege un alt ID. O alta abordare
+ar fi putut fi trunchierea user ID-ului dupa primele 10 caractere, dar am
+ales sa fac in acest mod, pentru a-i lasa libertatea utilizatorului de a alege
+ce doreste, posibil nestiind limita de caractere, iar trunchierea putand afecta
+o posibila implementare de functionalitati ulterioare ce ar putea fi implementate,
+cum ar fi comunicarea intre clientii de TCP, in functie de ID.
 
 Daca se primeste un mesaj de tip subscribe de la client, in urma verificarii
 tokenilor, se vor face actualizarile necesare in lista de topicuri (cu SF
